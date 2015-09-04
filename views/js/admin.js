@@ -321,6 +321,21 @@ $(function () {
         data['type'] = tab.find('[name="type"]:checked').val();
         setAllProducts(data, 'description');
     });
+    $('#setShippingAllProduct').live('click', function () {
+        var tab = $('#tab10');
+        var data = {};
+        data['carrier'] = [];
+        data['shipping_height'] = tab.find('[name="shipping_height"]').val();
+        data['shipping_width'] = tab.find('[name="shipping_width"]').val();
+        data['shipping_depth'] = tab.find('[name="shipping_depth"]').val();
+        data['shipping_weight'] = tab.find('[name="shipping_weight"]').val();
+        data['additional_shipping_cost'] = tab.find('[name="additional_shipping_cost"]').val();
+
+        tab.find('[name="carrier[]"] option:selected').each(function () {
+            data['carrier'].push(parseInt($(this).attr('value')));
+        });
+        setAllProducts(data, 'shipping');
+    });
     $('.product_checkbox').live('click', function () {
         var tr = $(this).closest('tr');
         if ($(this).is(':checked'))
@@ -391,7 +406,7 @@ function setAllProducts(data, field)
                         table.find('.product_' + i + ' [data-'+field+']').text(r.products[i].price);
                         table.find('.product_' + i + ' [data-'+field+'_final]').text(r.products[i].price_final);
                     }
-                    else if (field == 'accessories' || field == 'discount' || field == 'description')
+                    else if (field == 'accessories' || field == 'discount' || field == 'description' || field == 'shipping')
                     {
 
                     }

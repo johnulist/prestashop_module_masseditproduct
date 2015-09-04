@@ -94,6 +94,7 @@ class AdminMassEditProductController extends ModuleAdminController
 			'manufacturers' => Manufacturer::getManufacturers(false, 0, false),
 			'suppliers' => Supplier::getSuppliers(false, 0, false),
 			'currencies' => Currency::getCurrencies(false, true),
+			'carriers' => Carrier::getCarriers($this->context->language->id),
 			'countries' => Country::getCountries($this->context->language->id, true),
 			'groups' => Group::getGroups($this->context->language->id)
 		);
@@ -933,6 +934,62 @@ class AdminMassEditProductController extends ModuleAdminController
 		$return_products = array();
 		foreach ($products as $product)
 			$return_products[(int)$product['id']] = $obj_supplier->name;
+		die(Tools::jsonEncode(array(
+			'hasError' => false,
+			'products' => $return_products
+		)));
+	}
+	public function ajaxProcessSetShippingAllProduct()
+	{
+		$error = array();
+		$products = Tools::getValue('products');
+		$carriers = Tools::getValue('carrier');
+		$height = Tools::getValue('shipping_height');
+		$width = Tools::getValue('shipping_width');
+		$depth = Tools::getValue('shipping_depth');
+		$weight = Tools::getValue('shipping_weight');
+		$additional_shipping_cost = Tools::getValue('additional_shipping_cost');
+
+		if (!is_array($carriers) || !count($carriers))
+			$error[] = $this->module->l('No carriers');
+		if (!is_array($products) || !count($products))
+			$error[] = $this->module->l('No products');
+
+		if (count($error))
+			die(Tools::jsonEncode(array(
+				'hasError' => true,
+				'error' => implode('<br>', $error)
+			)));
+		foreach ($products as $product)
+		{
+
+            $vars = array();
+            $product_id = (int)$product['id'];
+			$product = new Product($product_id);
+			if (Validate::isLoadedObject($product))
+			{
+                if (strlen($height) > 0) {
+                    $vars['height'] = (float)$height;
+                }
+                if (strlen($width) > 0) {
+                    $vars['width'] = (float)$width;
+                }
+                if (strlen($depth) > 0) {
+                    $vars['depth'] = (float)$depth;
+                }
+                if (strlen($weight) > 0) {
+                    $vars['weight'] = (float)$weight;
+                }
+                if (strlen($additional_shipping_cost) > 0) {
+                    $vars['additional_shipping_cost'] = (float)$additional_shipping_cost;
+                }
+				$product->setCarriers($carriers);
+
+                Db::getInstance()->update('product', $vars, ' id_product = '.$product_id);
+			}
+		}
+		$ids_product = $this->getProductsForRequest();
+		$return_products = array();
 		die(Tools::jsonEncode(array(
 			'hasError' => false,
 			'products' => $return_products

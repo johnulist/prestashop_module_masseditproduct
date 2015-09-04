@@ -246,6 +246,7 @@
 				<li data-tab="tab7">{l s='Supplier' mod='masseditproduct'}</li>
 				<li data-tab="tab8">{l s='Discount' mod='masseditproduct'}</li>
 				<li data-tab="tab9">{l s='Description' mod='masseditproduct'}</li>
+				<li data-tab="tab10">{l s='Shipping' mod='masseditproduct'}</li>
 			</ul>
 			<div class="tabs_content">
 				<div id="tab1">
@@ -654,6 +655,73 @@
 					<div class="row">
 						<div class="col-lg-12">
 							<button id="setDescriptionAllProduct" class="btn btn-default">
+								<span>{l s='Apply' mod='masseditproduct'}</span>
+							</button>
+						</div>
+					</div>
+				</div>
+				<div id="tab10">
+					<div class="row">
+						<label class="control-label col-lg-12">{l s='Shipping' mod='masseditproduct'}</label>
+
+                        <div class="form-group">
+                            <label class="control-label col-lg-3" for="shipping_width"> Package width</label>
+                            <div class="input-group col-lg-2">
+                                <span class="input-group-addon">cm</span>
+                                <input maxlength="14" id="shipping_width" name="shipping_width" type="text">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="control-label col-lg-3" for="shipping_height"> Package height</label>
+                            <div class="input-group col-lg-2">
+                                <span class="input-group-addon">cm</span>
+                                <input maxlength="14" id="shipping_height" name="shipping_height" type="text" >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="control-label col-lg-3" for="shipping_depth"> Package depth</label>
+                            <div class="input-group col-lg-2">
+                                <span class="input-group-addon">cm</span>
+                                <input maxlength="14" id="shipping_depth" name="shipping_depth" type="text" >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="control-label col-lg-3" for="shipping_weight"> Package weight</label>
+                            <div class="input-group col-lg-2">
+                                <span class="input-group-addon">kg</span>
+                                <input maxlength="14" id="shipping_weight" name="shipping_weight" type="text" >
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="control-label col-lg-3" for="additional_shipping_cost">
+                                <span class="label-tooltip" data-toggle="tooltip" title="" data-original-title="If a carrier has a tax, it will be added to the shipping fees.">
+                                    Additional shipping fees (for a single item)
+                                </span>
+
+                            </label>
+                            <div class="input-group col-lg-2">
+                                <span class="input-group-addon">$  (tax excl.)</span>
+                                <input type="text" id="additional_shipping_cost" name="additional_shipping_cost" >
+                            </div>
+                        </div>
+						<label class="control-label col-lg-12">{l s='Select carriers' mod='masseditproduct'}</label>
+						<div class="col-lg-12">
+							<select multiple name="carrier[]">
+								{if is_array($carriers) && count($carriers)}
+									{foreach from=$carriers item=carrier}
+										<option value="{$carrier.id_reference|intval}">{$carrier.name|escape:'quotes':'UTF-8'}</option>
+									{/foreach}
+								{/if}
+							</select>
+						</div>
+					</div>
+					<div class="row">
+						<div class="col-lg-12">
+							<button id="setShippingAllProduct" class="btn btn-default">
 								<span>{l s='Apply' mod='masseditproduct'}</span>
 							</button>
 						</div>
