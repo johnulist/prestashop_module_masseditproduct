@@ -296,16 +296,28 @@
 						</div>
 					</div>
 					<div class="row">
-						<label class="control-label col-lg-12">{l s='Apply change for price' mod='masseditproduct'}</label>
+						<label class="control-label col-lg-12">{l s='Type of price' mod='masseditproduct'}</label>
 						<div class="col-lg-12">
 							<div class="btn-group btn-group-radio">
 								<label for="type_price_base">
 									<input type="radio" checked name="type_price" value="0" id="type_price_base"/>
-									<span class="btn btn-default">{l s='Base' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='Pre-tax' mod='masseditproduct'}</span>
 								</label>
 								<label for="type_price_final">
 									<input type="radio" name="type_price" value="1" id="type_price_final"/>
-									<span class="btn btn-default">{l s='Final' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='After tax' mod='masseditproduct'}</span>
+								</label>
+								<label for="type_price_wholesale">
+									<input type="radio" name="type_price" value="2" id="type_price_wholesale"/>
+									<span class="btn btn-default">{l s='Wholesale' mod='masseditproduct'}</span>
+								</label>
+								<label for="type_price_unit">
+									<input type="radio" name="type_price" value="3" id="type_price_unit"/>
+									<span class="btn btn-default">{l s='Unit' mod='masseditproduct'}</span>
+								</label>
+								<label for="type_price_unity">
+									<input type="radio" name="type_price" value="4" id="type_price_unity"/>
+									<span class="btn btn-default">{l s='Unity (25cm, 2 bottles etc.)' mod='masseditproduct'}</span>
 								</label>
 							</div>
 						</div>
@@ -316,19 +328,19 @@
 							<div class="btn-group btn-group-radio">
 								<label for="action_price_increase_percent">
 									<input type="radio" checked name="action_price" value="1" id="action_price_increase_percent"/>
-									<span class="btn btn-default">{l s='Increase on %' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='Increase by %' mod='masseditproduct'}</span>
 								</label>
 								<label for="action_price_increase">
 									<input type="radio" name="action_price" value="2" id="action_price_increase"/>
-									<span class="btn btn-default">{l s='Increase on value' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='Increase by value' mod='masseditproduct'}</span>
 								</label>
 								<label for="action_price_reduce_percent">
 									<input type="radio" name="action_price" value="3" id="action_price_reduce_percent"/>
-									<span class="btn btn-default">{l s='Reduce on %' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='Reduce by %' mod='masseditproduct'}</span>
 								</label>
 								<label for="action_price_reduce">
 									<input type="radio" name="action_price" value="4" id="action_price_reduce"/>
-									<span class="btn btn-default">{l s='Reduce on value' mod='masseditproduct'}</span>
+									<span class="btn btn-default">{l s='Reduce by value' mod='masseditproduct'}</span>
 								</label>
 								<label for="action_price_rewrite">
 									<input type="radio" name="action_price" value="5" id="action_price_rewrite"/>
@@ -338,7 +350,7 @@
 						</div>
 					</div>
 					<div class="row">
-						<label class="control-label col-lg-12">{l s='Write value' mod='masseditproduct'}</label>
+						<label class="control-label col-lg-12">{l s='Value' mod='masseditproduct'}</label>
 						<div class="col-lg-4">
 							<input type="text" name="price_value"/>
 						</div>

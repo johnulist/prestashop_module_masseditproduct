@@ -180,29 +180,31 @@ class AdminMassEditProductController extends ModuleAdminController
 		return $quantity;
 	}
 
-	public function updatePriceProduct($id_product, $price)
-	{
+	public function updatePriceProduct($id_product, $price, $price_type='price') {
+        $price_type = pSQL($price_type);
+
 		if (!Shop::isFeatureActive())
 			Db::getInstance()->update('product', array(
-				'price' => ($price < 0 ? 0 : (float)$price)
+				$price_type => ($price < 0 ? 0 : (float)$price)
 			), ' id_product = '.(int)$id_product);
 		Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'product_shop` ps
 		LEFT JOIN `'._DB_PREFIX_.'product` p ON ps.`id_product` = p.`id_product`
-		SET ps.`price` = '.($price < 0 ? 0 : (float)$price).'
+		SET ps.`'.$price_type.'` = '.($price < 0 ? 0 : (float)$price).'
 		WHERE ps.`id_product` = '.(int)$id_product.'
 		'.(Shop::isFeatureActive() && $this->sql_shop ? ' AND ps.`id_shop` '.$this->sql_shop : ''));
 	}
 
-	public function updatePriceCombination($id_product_attribute, $price)
+	public function updatePriceCombination($id_product_attribute, $price, $price_type='price')
 	{
+        $price_type = pSQL($price_type);
 		if (!Shop::isFeatureActive())
 			Db::getInstance()->update('product_attribute', array(
-				'price' => ($price < 0 ? 0 : (float)$price)
+				$price_type => ($price < 0 ? 0 : (float)$price)
 			), ' id_product_attribute = '.(int)$id_product_attribute);
 		Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'product_attribute_shop` pas
 		LEFT JOIN `'._DB_PREFIX_.'product_attribute` pa ON pas.`id_product_attribute` = pa.`id_product_attribute`
 		LEFT JOIN `'._DB_PREFIX_.'product` p ON p.`id_product` = pa.`id_product`
-		SET pas.`price` = '.($price < 0 ? 0 : (float)$price).'
+		SET pas.`'.$price_type.'` = '.($price < 0 ? 0 : (float)$price).'
 		WHERE pas.`id_product_attribute` = '.(int)$id_product_attribute
 			.(Shop::isFeatureActive() && $this->sql_shop ? ' AND pas.`id_shop` '.$this->sql_shop : ''));
 	}
@@ -573,6 +575,10 @@ class AdminMassEditProductController extends ModuleAdminController
 
 	const TYPE_PRICE_BASE = 0;
 	const TYPE_PRICE_FINAL = 1;
+	const TYPE_PRICE_WHOLESALE = 2;
+	const TYPE_PRICE_UNIT = 3;
+	const TYPE_PRICE_UNITY = 4;
+    // SMB STREAMLINE ADDITION: Wholesale and unit price, and Unity
 
 	const ACTION_PRICE_INCREASE_PERCENT = 1;
 	const ACTION_PRICE_INCREASE = 2;
@@ -591,11 +597,19 @@ class AdminMassEditProductController extends ModuleAdminController
 		$ids_product = $this->getProductsForRequest();
 		$type_price = (int)Tools::getValue('type_price');
 		$action_price = (int)Tools::getValue('action_price');
-		$price_value = (float)Tools::getValue('price_value');
+		$price_value = Tools::getValue('price_value');
 		$change_for = (int)Tools::getValue('change_for');
 		$combinations = Tools::getValue('combinations');
-		if (!(int)$price_value)
-			$error[] = $this->module->l('Write value');
+
+		if ($type_price === self::TYPE_PRICE_UNITY && $action_price !== self::ACTION_PRICE_REWRITE) {
+			$error[] = $this->module->l('Unity must be used with the Rewrite action only');
+        }
+		if ($type_price === self::TYPE_PRICE_UNITY && $change_for !== self::CHANGE_FOR_PRODUCT) {
+			$error[] = $this->module->l('Unity cannot be used to change combinations');
+        }
+        if ($type_price !== self::TYPE_PRICE_UNITY) {
+            $price_value = (float)$price_value;
+        }
 		if (!count($ids_product))
 			$error[] = $this->module->l('No products');
 		if ($change_for === self::CHANGE_FOR_COMBINATION && (!is_array($combinations) || (is_array($combinations) && !count($combinations))))
@@ -608,45 +622,60 @@ class AdminMassEditProductController extends ModuleAdminController
 
 		$combinations = $this->getCombinationsForRequest();
 		$id_shop = Shop::isFeatureActive() && Shop::getContext() == Shop::CONTEXT_SHOP? (int)$this->context->shop->id : 'p.id_shop_default';
-		$query_products = Db::getInstance()->executeS('SELECT
+
+        $query_products = Db::getInstance()->executeS('SELECT
 			p.`id_product`,
-			pss.`price`
+			pss.`price`,
+            pss.`wholesale_price`,
+            pss.`unit_price_ratio`
 		FROM '._DB_PREFIX_.'product p
 		JOIN `'._DB_PREFIX_.'product_shop` pss ON (p.`id_product` = pss.`id_product` AND pss.id_shop = '.pSQL($id_shop).')
 		WHERE p.`id_product` IN ('.pSQL(implode(',', $ids_product)).')');
-		$return_products = array();
+
+        $return_products = array();
 		$return_combinations = array();
-		$country = new Country(Configuration::get('PS_COUNTRY_DEFAULT'));
+
+        $country = new Country(Configuration::get('PS_COUNTRY_DEFAULT'));
 		$address = new Address();
 		$address->id_country = $country->id;
-		foreach ($query_products as $product)
-		{
+
+		foreach ($query_products as $product) {
 			$price = 0;
 
-			if ((int)Configuration::get('PS_TAX'))
-			{
+			if ((int)Configuration::get('PS_TAX')) {
 				$tax_manager = TaxManagerFactory::getManager($address, Product::getIdTaxRulesGroupByIdProduct((int)$product['id_product'], $this->context));
 				$product_tax_calculator = $tax_manager->getTaxCalculator();
 				$product['price_final'] = $product_tax_calculator->addTaxes($product['price']);
 				$product['rate'] = $tax_manager->getTaxCalculator()->getTotalRate();
-			}
-			else
-			{
+			} else {
 				$product['price_final'] = $product['price'];
 				$product['rate'] = 0;
 			}
+
 			$update_combinations = array();
-			if ($type_price === self::TYPE_PRICE_BASE)
+			if ($type_price === self::TYPE_PRICE_BASE) {
 				$price = $product['price'];
-			else if ($type_price === self::TYPE_PRICE_FINAL)
+			} else if ($type_price === self::TYPE_PRICE_FINAL) {
 				$price = $product['price_final'];
-			if ($change_for === self::CHANGE_FOR_PRODUCT)
+			} else if ($type_price === self::TYPE_PRICE_WHOLESALE) {
+				$price = $product['wholesale_price'];
+			} else if ($type_price === self::TYPE_PRICE_UNIT) {
+                if (empty($product['unit_price_ratio']) || $product['unit_price_ratio'] == 0.0) {
+                    $price = $product['price'];
+                } else {
+                    $price = $product['price'] / $product['unit_price_ratio'];
+                }
+            }
+
+			if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
 				$price = $this->actionPrice($price, $action_price, $price_value);
-			if ($change_for === self::CHANGE_FOR_COMBINATION && array_key_exists($product['id_product'], $combinations))
-			{
+            } else if ($type_price === self::TYPE_PRICE_UNITY) {
+                $price = $price_value;
+            }
+
+			if ($change_for === self::CHANGE_FOR_COMBINATION && array_key_exists($product['id_product'], $combinations)) {
 				$product_combinations = $this->getCombinationsByIds($combinations[$product['id_product']], $id_shop);
-				foreach ($product_combinations as $combination)
-				{
+				foreach ($product_combinations as $combination) {
 					$price_pa = 0;
 					$total_price_pa = 0;
 					if ($type_price === self::TYPE_PRICE_BASE)
@@ -688,32 +717,52 @@ class AdminMassEditProductController extends ModuleAdminController
 					$update_combinations[$combination['id_product_attribute']] = $price_pa;
 				}
 			}
+
 			$final_price = 0;
-			if ($type_price === self::TYPE_PRICE_FINAL)
-			{
+
+			if ($type_price === self::TYPE_PRICE_FINAL) {
 				$final_price = $price;
-				if (Configuration::get('PS_TAX'))
+				if (Configuration::get('PS_TAX')) {
 					$price = $price / (100 + (int)$product['rate']) * 100;
-			}
-			else if ($type_price === self::TYPE_PRICE_BASE)
-			{
-				if (Configuration::get('PS_TAX'))
+                }
+			} else if ($type_price === self::TYPE_PRICE_BASE) {
+				if (Configuration::get('PS_TAX')) {
 					$final_price = $price + ($price / 100 * (int)$product['rate']);
-				else
+				} else {
 					$final_price = $price;
+                }
+			} else if ($type_price === self::TYPE_PRICE_UNIT) {
+                $price = $product['price'] / $price;
+            }
+
+            $price_types = array(self::TYPE_PRICE_BASE => 'price', self::TYPE_PRICE_WHOLESALE => 'wholesale_price', self::TYPE_PRICE_UNIT => 'unit_price_ratio');
+
+			if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
+				$this->updatePriceProduct($product['id_product'], $price, $price_types[$type_price]);
+            } else if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price === self::TYPE_PRICE_UNITY) {
+                Db::getInstance()->update('product', array(
+                    'unity' => $price
+                ), ' id_product = '.(int)$product['id_product']);
+
+                Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'product_shop` ps
+                LEFT JOIN `'._DB_PREFIX_.'product` p ON ps.`id_product` = p.`id_product`
+                SET ps.`unity` = "'.$price.'"
+                WHERE ps.`id_product` = '.(int)$product['id_product'].'
+                '.(Shop::isFeatureActive() && $this->sql_shop ? ' AND ps.`id_shop` '.$this->sql_shop : ''));
+            }
+
+			if ($change_for === self::CHANGE_FOR_COMBINATION && count($update_combinations) && $type_price !== self::TYPE_PRICE_UNIT && $type_price !== self::TYPE_PRICE_UNITY) {
+				foreach ($update_combinations as $id_pa => $pa_price) {
+					$this->updatePriceCombination($id_pa, $pa_price, $price_types[$type_price]);
+                }
 			}
-			if ($change_for === self::CHANGE_FOR_PRODUCT)
-				$this->updatePriceProduct($product['id_product'], $price);
-			if ($change_for === self::CHANGE_FOR_COMBINATION && count($update_combinations))
-			{
-				foreach ($update_combinations as $id_pa => $pa_price)
-					$this->updatePriceCombination($id_pa, $pa_price);
-			}
+
 			$return_products[$product['id_product']] = array(
 				'price' => Tools::displayPrice($price, $currency),
 				'price_final' => Tools::displayPrice($final_price, $currency)
 			);
 		}
+
 		die(Tools::jsonEncode(array(
 			'hasError' => false,
 			'products' => $return_products,
