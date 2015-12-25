@@ -247,12 +247,27 @@ $(function () {
         data['category'] = categories[0].id;
         setAllProducts(data, 'category');
     });
+    $('#setDefaultCategoryAllProduct').live('click', function () {
+        var tab = $('#tab1');
+        var data = {};
+        var categories = tree_categories.getListSelectedCategories();
+        data['category'] = categories[0].id;
+        setAllProducts(data, 'defaultcategory');
+    });
+    $('#removeCategoryAllProduct').live('click', function () {
+        var tab = $('#tab1');
+        var data = {};
+        var categories = tree_categories.getListSelectedCategories();
+        data['category'] = categories[0].id;
+        setAllProducts(data, 'removecategory');
+    });
     $('#setPriceAllProduct').live('click', function () {
         var tab = $('#tab2');
         var data = {};
         data['type_price'] = tab.find('[name="type_price"]:checked').val();
         data['action_price'] = tab.find('[name="action_price"]:checked').val();
         data['change_for'] = tab.find('[name="change_for"]:checked').val();
+        data['price_id_group'] = tab.find('[name="price_id_group"]').val();
         data['combinations'] = $.getAllValues();
         data['price_value'] = tab.find('[name="price_value"]').val();
         setAllProducts(data, 'price');

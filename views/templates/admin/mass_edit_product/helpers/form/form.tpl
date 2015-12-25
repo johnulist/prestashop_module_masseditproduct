@@ -272,9 +272,15 @@
 						</div>
 					</div>
 					<div class="row">
-						<div class="col-lg-12">
+						<div class="col-lg-4">
 							<button id="setCategoryAllProduct" class="btn btn-default">
-								<span>{l s='Apply' mod='masseditproduct'}</span>
+								<span>{l s='Add Category' mod='masseditproduct'}</span>
+							</button>
+							<button id="setDefaultCategoryAllProduct" class="btn btn-default">
+								<span>{l s='Set Default Category' mod='masseditproduct'}</span>
+							</button>
+							<button id="removeCategoryAllProduct" class="btn btn-default">
+								<span>{l s='Remove Category' mod='masseditproduct'}</span>
 							</button>
 						</div>
 					</div>
@@ -349,6 +355,19 @@
 							</div>
 						</div>
 					</div>
+					<div class="row">
+						<label class="control-label col-lg-12">{l s='Group (if you select one, a price rule will be created for this group, but the base price will be unaffected' mod='masseditproduct'}</label>
+						<div class="col-lg-4">
+                            <select name="price_id_group">
+                                <option value="0">{l s='-- Select a group --' mod='masseditproduct'}</option>
+                                {if is_array($groups) && count($groups)}
+                                    {foreach from=$groups item=group}
+                                        <option value="{$group.id_group|intval}">{$group.name|escape:'quotes':'UTF-8'}</option>
+                                    {/foreach}
+                                {/if}
+                            </select>
+                        </div>
+                    </div>
 					<div class="row">
 						<label class="control-label col-lg-12">{l s='Value' mod='masseditproduct'}</label>
 						<div class="col-lg-4">

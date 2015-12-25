@@ -539,6 +539,46 @@ class AdminMassEditProductController extends ModuleAdminController
 				'error' => implode('<br>', $error)
 			)));
 		$ids_product = $this->getProductsForRequest();
+
+		$category_product_data = array();
+		foreach ($ids_product as $id_product)
+		{
+			$category_product_data[] = array(
+				'id_product' => (int)$id_product,
+				'id_category' => (int)$category,
+			);
+		}
+		Db::getInstance()->insert('category_product', $category_product_data, false, true, Db::INSERT_IGNORE);
+
+		$return_products = array();
+		foreach ($products as $product)
+			$return_products[$product['id']] = $obj_category->name;
+
+		die(Tools::jsonEncode(array(
+			'hasError' => false,
+			'products' => $return_products
+		)));
+	}
+
+	public function ajaxProcessSetDefaultCategoryAllProduct()
+	{
+		$error = array();
+		$products = Tools::getValue('products');
+		$category = (int)Tools::getValue('category');
+
+		if (!is_array($products) || !count($products))
+			$error[] = $this->module->l('No products');
+
+		$obj_category = new Category($category, $this->context->language->id);
+		if (!Validate::isLoadedObject($obj_category))
+			$error[] = $this->module->l('Category not exists');
+
+		if (count($error))
+			die(Tools::jsonEncode(array(
+				'hasError' => true,
+				'error' => implode('<br>', $error)
+			)));
+		$ids_product = $this->getProductsForRequest();
 		Db::getInstance()->update(
 			'product',
 			array(
@@ -562,6 +602,59 @@ class AdminMassEditProductController extends ModuleAdminController
 			);
 		}
 		Db::getInstance()->insert('category_product', $category_product_data, false, true, Db::INSERT_IGNORE);
+
+		$return_products = array();
+		foreach ($products as $product)
+			$return_products[$product['id']] = $obj_category->name;
+
+		die(Tools::jsonEncode(array(
+			'hasError' => false,
+			'products' => $return_products
+		)));
+	}
+
+	public function ajaxProcessSetRemoveCategoryAllProduct()
+	{
+		$error = array();
+		$products = Tools::getValue('products');
+		$category = (int)Tools::getValue('category');
+
+		if (!is_array($products) || !count($products))
+			$error[] = $this->module->l('No products');
+
+		$obj_category = new Category($category, $this->context->language->id);
+		if (!Validate::isLoadedObject($obj_category))
+			$error[] = $this->module->l('Category not exists');
+
+		if (count($error))
+			die(Tools::jsonEncode(array(
+				'hasError' => true,
+				'error' => implode('<br>', $error)
+			)));
+		$ids_product = $this->getProductsForRequest();
+		Db::getInstance()->update(
+			'product',
+			array(
+				'id_category_default' => 2 // Home category
+			),
+			' id_product IN('.pSQL(implode(',', $ids_product)).')'
+		);
+		//UPDATE `ps_product` SET `id_category_default` = '2' WHERE  id_product IN( 1) AND (TRUNCATE TABLE `ps_orders`)
+
+		Db::getInstance()->update('product_shop', array(
+			'id_category_default' => 2 // Home category
+		), ' id_product IN('.pSQL(implode(',', $ids_product)).')'
+			.(Shop::isFeatureActive() && $this->sql_shop ? ' AND id_shop '.pSQL($this->sql_shop) : ''));
+
+		$category_product_data = array();
+		foreach ($ids_product as $id_product)
+		{
+			$category_product_data[] = array(
+				'id_product' => (int)$id_product,
+				'id_category' => (int)$category,
+			);
+		}
+		Db::getInstance()->delete('category_product', $category_product_data, false, true, Db::INSERT_IGNORE);
 
 		$return_products = array();
 		foreach ($products as $product)
@@ -640,127 +733,206 @@ class AdminMassEditProductController extends ModuleAdminController
 		$address->id_country = $country->id;
 
 		foreach ($query_products as $product) {
-			$price = 0;
 
-			if ((int)Configuration::get('PS_TAX')) {
-				$tax_manager = TaxManagerFactory::getManager($address, Product::getIdTaxRulesGroupByIdProduct((int)$product['id_product'], $this->context));
-				$product_tax_calculator = $tax_manager->getTaxCalculator();
-				$product['price_final'] = $product_tax_calculator->addTaxes($product['price']);
-				$product['rate'] = $tax_manager->getTaxCalculator()->getTotalRate();
-			} else {
-				$product['price_final'] = $product['price'];
-				$product['rate'] = 0;
-			}
+            // SMB STREAMLINE ADDITION:  Set Specific price for a customer group
+            if (Tools::getIsset('price_id_group')) {
+                $id_shop = $this->context->shop->id;
+                $id_product = $product['id_product'];
+                $id_currency = $currency['id_currency'];
+                $id_group = Tools::getValue('price_id_group');
+                $id_customer = null;
+                $id_product_attribute = null;
 
-			$update_combinations = array();
-			if ($type_price === self::TYPE_PRICE_BASE) {
-				$price = $product['price'];
-			} else if ($type_price === self::TYPE_PRICE_FINAL) {
-				$price = $product['price_final'];
-			} else if ($type_price === self::TYPE_PRICE_WHOLESALE) {
-				$price = $product['wholesale_price'];
-			} else if ($type_price === self::TYPE_PRICE_UNIT) {
-                if (empty($product['unit_price_ratio']) || $product['unit_price_ratio'] == 0.0) {
-                    $price = $product['price'];
+                // If the action selected is rewrite, we set the price here
+                $price = null;
+                $reduction = 0;
+                $reduction_type = 'amount';
+                $reduction_tax = 0;
+
+                if ($action_price == self::ACTION_PRICE_REWRITE) {
+                    $price = $price_value;
+                } else if ($action_price == self::ACTION_PRICE_REDUCE_PERCENT || $action_price == self::ACTION_PRICE_REDUCE) {
+                    $reduction = $price_value;
+                    $reduction_type = ($action_price == self::ACTION_PRICE_REDUCE_PERCENT) ? 'percentage' : 'amount';
+                }
+
+                $from_quantity = 1;
+
+                $from = Tools::getValue('sp_from');
+                if (!$from) {
+                    $from = '0000-00-00 00:00:00';
+                }
+                $to = Tools::getValue('sp_to');
+                if (!$to) {
+                    $to = '0000-00-00 00:00:00';
+                }
+
+                if ($this->_validateSpecificPrice($id_shop, $id_currency, $country->id, $id_group, $price, $from_quantity, $reduction, $reduction_type, $from, $to, $id_product_attribute)) {
+                    $specificPrice = new SpecificPrice();
+                    $specificPrice->id_product = (int)$id_product;
+                    $specificPrice->id_product_attribute = (int)$id_product_attribute;
+                    $specificPrice->id_shop = (int)$id_shop;
+                    $specificPrice->id_currency = (int)($id_currency);
+                    $specificPrice->id_country = (int)($country->id);
+                    $specificPrice->id_group = (int)($id_group);
+                    $specificPrice->id_customer = (int)$id_customer;
+                    $specificPrice->price = ($price == 0) ? $product['price'] : (float)($price);
+                    $specificPrice->from_quantity = (int)($from_quantity);
+                    $specificPrice->reduction = (float)($reduction_type == 'percentage' ? $reduction / 100 : $reduction);
+                    $specificPrice->reduction_tax = $reduction_tax;
+                    $specificPrice->reduction_type = $reduction_type;
+                    $specificPrice->from = $from;
+                    $specificPrice->to = $to;
+                    if (!$specificPrice->add()) {
+                        die(Tools::jsonEncode(array(
+                            'hasError' => true,
+                            'products' => array(),
+                            'combinations' => array()
+                        )));
+                    }
                 } else {
-                    $price = $product['price'] / $product['unit_price_ratio'];
+                    die(Tools::jsonEncode(array(
+                        'hasError' => true,
+                        'id_shop' => $id_shop,
+                        'id_currency' => $id_currency,
+                        'country->id' => $country->id,
+                        'id_group' => $id_group,
+                        'id_customer' => $id_customer,
+                        'price' => $price,
+                        'from_quantity' => $from_quantity,
+                        'reduction' => $reduction,
+                        'reduction_type' => $reduction_type,
+                        'from' => $from,
+                        'to' => $to,
+                        'id_product_attribute' => $id_product_attribute,
+                        'errors' => $this->errors
+                    )));
                 }
-            }
+            } else {
+            // END OF SMB STREAMLINE ADDITION
 
-			if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
-				$price = $this->actionPrice($price, $action_price, $price_value);
-            } else if ($type_price === self::TYPE_PRICE_UNITY) {
-                $price = $price_value;
-            }
+                $price = 0;
 
-			if ($change_for === self::CHANGE_FOR_COMBINATION && array_key_exists($product['id_product'], $combinations)) {
-				$product_combinations = $this->getCombinationsByIds($combinations[$product['id_product']], $id_shop);
-				foreach ($product_combinations as $combination) {
-					$price_pa = 0;
-					$total_price_pa = 0;
-					if ($type_price === self::TYPE_PRICE_BASE)
-					{
-						$price_pa = $combination['price'];
-						$total_price_pa = $combination['total_price'];
-					}
-					else if ($type_price === self::TYPE_PRICE_FINAL)
-					{
-						$price_pa = $combination['price_final'];
-						$total_price_pa = $combination['total_price_final'];
-					}
-					$price_pa = $this->actionPrice($price_pa, $action_price, $price_value);
-					$total_price_pa = $this->actionPrice($total_price_pa, $action_price, $price_value);
-					$final_price_pa = 0;
-					$total_final_price_pa = 0;
-					if ($type_price === self::TYPE_PRICE_FINAL)
-					{
-						$final_price_pa = $price_pa;
-						$total_final_price_pa = $total_price_pa;
-						if (Configuration::get('PS_TAX'))
-							$price_pa = $price_pa / (100 + (int)$product['rate']) * 100;
-						$total_price_pa = $total_price_pa / (100 + (int)$product['rate']) * 100;
-					}
-					else if ($type_price === self::TYPE_PRICE_BASE)
-					{
-						if (Configuration::get('PS_TAX'))
-							$final_price_pa = $price_pa + ($price_pa / 100 * (int)$product['rate']);
-						else
-							$final_price_pa = $price_pa;
-						$total_final_price_pa = $total_price_pa + ($total_price_pa / 100 * (int)$product['rate']);
-					}
-					$return_combinations[$combination['id_product_attribute']] = array(
-						'price' => Tools::displayPrice($price_pa, $currency),
-						'total_price' => Tools::displayPrice($combination['product_price'] + $total_price_pa, $currency),
-						'price_final' => Tools::displayPrice($final_price_pa),
-						'total_price_final' => Tools::displayPrice($combination['product_price_final'] + $total_final_price_pa, $currency)
-					);
-					$update_combinations[$combination['id_product_attribute']] = $price_pa;
-				}
-			}
-
-			$final_price = 0;
-
-			if ($type_price === self::TYPE_PRICE_FINAL) {
-				$final_price = $price;
-				if (Configuration::get('PS_TAX')) {
-					$price = $price / (100 + (int)$product['rate']) * 100;
+                if ((int)Configuration::get('PS_TAX')) {
+                    $tax_manager = TaxManagerFactory::getManager($address, Product::getIdTaxRulesGroupByIdProduct((int)$product['id_product'], $this->context));
+                    $product_tax_calculator = $tax_manager->getTaxCalculator();
+                    $product['price_final'] = $product_tax_calculator->addTaxes($product['price']);
+                    $product['rate'] = $tax_manager->getTaxCalculator()->getTotalRate();
+                } else {
+                    $product['price_final'] = $product['price'];
+                    $product['rate'] = 0;
                 }
-			} else if ($type_price === self::TYPE_PRICE_BASE) {
-				if (Configuration::get('PS_TAX')) {
-					$final_price = $price + ($price / 100 * (int)$product['rate']);
-				} else {
-					$final_price = $price;
+
+                $update_combinations = array();
+                if ($type_price === self::TYPE_PRICE_BASE) {
+                    $price = $product['price'];
+                } else if ($type_price === self::TYPE_PRICE_FINAL) {
+                    $price = $product['price_final'];
+                } else if ($type_price === self::TYPE_PRICE_WHOLESALE) {
+                    $price = $product['wholesale_price'];
+                } else if ($type_price === self::TYPE_PRICE_UNIT) {
+                    if (empty($product['unit_price_ratio']) || $product['unit_price_ratio'] == 0.0) {
+                        $price = $product['price'];
+                    } else {
+                        $price = $product['price'] / $product['unit_price_ratio'];
+                    }
                 }
-			} else if ($type_price === self::TYPE_PRICE_UNIT) {
-                $price = $product['price'] / $price;
-            }
 
-            $price_types = array(self::TYPE_PRICE_BASE => 'price', self::TYPE_PRICE_WHOLESALE => 'wholesale_price', self::TYPE_PRICE_UNIT => 'unit_price_ratio');
-
-			if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
-				$this->updatePriceProduct($product['id_product'], $price, $price_types[$type_price]);
-            } else if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price === self::TYPE_PRICE_UNITY) {
-                Db::getInstance()->update('product', array(
-                    'unity' => $price
-                ), ' id_product = '.(int)$product['id_product']);
-
-                Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'product_shop` ps
-                LEFT JOIN `'._DB_PREFIX_.'product` p ON ps.`id_product` = p.`id_product`
-                SET ps.`unity` = "'.$price.'"
-                WHERE ps.`id_product` = '.(int)$product['id_product'].'
-                '.(Shop::isFeatureActive() && $this->sql_shop ? ' AND ps.`id_shop` '.$this->sql_shop : ''));
-            }
-
-			if ($change_for === self::CHANGE_FOR_COMBINATION && count($update_combinations) && $type_price !== self::TYPE_PRICE_UNIT && $type_price !== self::TYPE_PRICE_UNITY) {
-				foreach ($update_combinations as $id_pa => $pa_price) {
-					$this->updatePriceCombination($id_pa, $pa_price, $price_types[$type_price]);
+                if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
+                    $price = $this->actionPrice($price, $action_price, $price_value);
+                } else if ($type_price === self::TYPE_PRICE_UNITY) {
+                    $price = $price_value;
                 }
-			}
 
-			$return_products[$product['id_product']] = array(
-				'price' => Tools::displayPrice($price, $currency),
-				'price_final' => Tools::displayPrice($final_price, $currency)
-			);
+                if ($change_for === self::CHANGE_FOR_COMBINATION && array_key_exists($product['id_product'], $combinations)) {
+                    $product_combinations = $this->getCombinationsByIds($combinations[$product['id_product']], $id_shop);
+                    foreach ($product_combinations as $combination) {
+                        $price_pa = 0;
+                        $total_price_pa = 0;
+                        if ($type_price === self::TYPE_PRICE_BASE)
+                        {
+                            $price_pa = $combination['price'];
+                            $total_price_pa = $combination['total_price'];
+                        }
+                        else if ($type_price === self::TYPE_PRICE_FINAL)
+                        {
+                            $price_pa = $combination['price_final'];
+                            $total_price_pa = $combination['total_price_final'];
+                        }
+                        $price_pa = $this->actionPrice($price_pa, $action_price, $price_value);
+                        $total_price_pa = $this->actionPrice($total_price_pa, $action_price, $price_value);
+                        $final_price_pa = 0;
+                        $total_final_price_pa = 0;
+                        if ($type_price === self::TYPE_PRICE_FINAL)
+                        {
+                            $final_price_pa = $price_pa;
+                            $total_final_price_pa = $total_price_pa;
+                            if (Configuration::get('PS_TAX'))
+                                $price_pa = $price_pa / (100 + (int)$product['rate']) * 100;
+                            $total_price_pa = $total_price_pa / (100 + (int)$product['rate']) * 100;
+                        }
+                        else if ($type_price === self::TYPE_PRICE_BASE)
+                        {
+                            if (Configuration::get('PS_TAX'))
+                                $final_price_pa = $price_pa + ($price_pa / 100 * (int)$product['rate']);
+                            else
+                                $final_price_pa = $price_pa;
+                            $total_final_price_pa = $total_price_pa + ($total_price_pa / 100 * (int)$product['rate']);
+                        }
+                        $return_combinations[$combination['id_product_attribute']] = array(
+                            'price' => Tools::displayPrice($price_pa, $currency),
+                            'total_price' => Tools::displayPrice($combination['product_price'] + $total_price_pa, $currency),
+                            'price_final' => Tools::displayPrice($final_price_pa),
+                            'total_price_final' => Tools::displayPrice($combination['product_price_final'] + $total_final_price_pa, $currency)
+                        );
+                        $update_combinations[$combination['id_product_attribute']] = $price_pa;
+                    }
+                }
+
+                $final_price = 0;
+
+                if ($type_price === self::TYPE_PRICE_FINAL) {
+                    $final_price = $price;
+                    if (Configuration::get('PS_TAX')) {
+                        $price = $price / (100 + (int)$product['rate']) * 100;
+                    }
+                } else if ($type_price === self::TYPE_PRICE_BASE) {
+                    if (Configuration::get('PS_TAX')) {
+                        $final_price = $price + ($price / 100 * (int)$product['rate']);
+                    } else {
+                        $final_price = $price;
+                    }
+                } else if ($type_price === self::TYPE_PRICE_UNIT) {
+                    $price = $product['price'] / $price;
+                }
+
+                $price_types = array(self::TYPE_PRICE_BASE => 'price', self::TYPE_PRICE_WHOLESALE => 'wholesale_price', self::TYPE_PRICE_UNIT => 'unit_price_ratio');
+
+                if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price !== self::TYPE_PRICE_UNITY) {
+                    $this->updatePriceProduct($product['id_product'], $price, $price_types[$type_price]);
+                } else if ($change_for === self::CHANGE_FOR_PRODUCT && $type_price === self::TYPE_PRICE_UNITY) {
+                    Db::getInstance()->update('product', array(
+                        'unity' => $price
+                    ), ' id_product = '.(int)$product['id_product']);
+
+                    Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'product_shop` ps
+                    LEFT JOIN `'._DB_PREFIX_.'product` p ON ps.`id_product` = p.`id_product`
+                    SET ps.`unity` = "'.$price.'"
+                    WHERE ps.`id_product` = '.(int)$product['id_product'].'
+                    '.(Shop::isFeatureActive() && $this->sql_shop ? ' AND ps.`id_shop` '.$this->sql_shop : ''));
+                }
+
+                if ($change_for === self::CHANGE_FOR_COMBINATION && count($update_combinations) && $type_price !== self::TYPE_PRICE_UNIT && $type_price !== self::TYPE_PRICE_UNITY) {
+                    foreach ($update_combinations as $id_pa => $pa_price) {
+                        $this->updatePriceCombination($id_pa, $pa_price, $price_types[$type_price]);
+                    }
+                }
+
+                $return_products[$product['id_product']] = array(
+                    'price' => Tools::displayPrice($price, $currency),
+                    'price_final' => Tools::displayPrice($final_price, $currency)
+                );
+            }
 		}
 
 		die(Tools::jsonEncode(array(
@@ -1232,4 +1404,24 @@ class AdminMassEditProductController extends ModuleAdminController
 		$combinations = $tmp_combinations;
 		return $combinations;
 	}
+
+    protected function _validateSpecificPrice($id_shop, $id_currency, $id_country, $id_group, $price, $from_quantity, $reduction, $reduction_type, $from, $to, $id_combination = 0)
+    {
+        if (!Validate::isUnsignedId($id_shop) || !Validate::isUnsignedId($id_currency) || !Validate::isUnsignedId($id_country) || !Validate::isUnsignedId($id_group) ) {
+            $this->errors[] = Tools::displayError('Wrong IDs');
+        } elseif ((!isset($price) && !isset($reduction)) || (isset($price) && !Validate::isNegativePrice($price)) || (isset($reduction) && !Validate::isPrice($reduction))) {
+            $this->errors[] = Tools::displayError('Invalid price/discount amount');
+        } elseif (!Validate::isUnsignedInt($from_quantity)) {
+            $this->errors[] = Tools::displayError('Invalid quantity');
+        } elseif ($reduction && !Validate::isReductionType($reduction_type)) {
+            $this->errors[] = Tools::displayError('Please select a discount type (amount or percentage).');
+        } elseif ($from && $to && (!Validate::isDateFormat($from) || !Validate::isDateFormat($to))) {
+            $this->errors[] = Tools::displayError('The from/to date is invalid.');
+        } elseif (SpecificPrice::exists((int)$this->object->id, $id_combination, $id_shop, $id_group, $id_country, $id_currency, $id_customer, $from_quantity, $from, $to, false)) {
+            $this->errors[] = Tools::displayError('A specific price already exists for these parameters.');
+        } else {
+            return true;
+        }
+        return false;
+    }
 }
